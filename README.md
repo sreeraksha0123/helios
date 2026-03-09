@@ -452,9 +452,6 @@ Feel free to extend this project with:
 - Advanced scheduling scenarios
 - Chaos engineering tests
 
-## 📝 License
-
-This project is provided as-is for educational and demonstration purposes.
 
 ## 💡 Key Takeaways
 
