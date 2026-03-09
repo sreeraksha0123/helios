@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: basic-app-config
+  namespace: self-healing
+data:
+  APP_NAME: "basic-self-healing-app"
+  LOG_LEVEL: "info"
+  PORT: "8080"

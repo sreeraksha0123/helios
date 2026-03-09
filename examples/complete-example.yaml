@@ -1,0 +1,482 @@
+# Complete Self-Healing Application Example
+# This file contains a fully documented example with all self-healing features
+
+---
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: production-app
+  labels:
+    environment: production
+
+---
+# ConfigMap with application configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: production-app
+data:
+  APP_ENV: "production"
+  LOG_LEVEL: "info"
+  ENABLE_METRICS: "true"
+  PORT: "8080"
+
+---
+# Deployment with comprehensive self-healing configuration
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: production-app
+  namespace: production-app
+  labels:
+    app: production-app
+    version: v1.0.0
+  annotations:
+    description: "Production application with full self-healing capabilities"
+spec:
+  # Number of pod replicas
+  replicas: 3
+  
+  # How fast to roll out changes
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # Max extra pods during update
+      maxUnavailable: 0  # Always maintain full capacity
+  
+  # How long to wait before considering rollout failed
+  progressDeadlineSeconds: 600
+  
+  # Minimum time pod should be ready before considering it available
+  minReadySeconds: 10
+  
+  # Number of old ReplicaSets to retain for rollback
+  revisionHistoryLimit: 10
+  
+  selector:
+    matchLabels:
+      app: production-app
+  
+  template:
+    metadata:
+      labels:
+        app: production-app
+        version: v1.0.0
+      annotations:
+        # Prometheus scraping
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    
+    spec:
+      # Graceful shutdown period
+      terminationGracePeriodSeconds: 30
+      
+      # Security context for all containers
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      
+      # Spread pods across nodes for high availability
+      affinity:
+        podAntiAffinity:
+          # Prefer spreading but not required
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - production-app
+              topologyKey: kubernetes.io/hostname
+          
+          # Hard requirement: never schedule two pods on same node
+          # Uncomment for strict anti-affinity
+          # requiredDuringSchedulingIgnoredDuringExecution:
+          # - labelSelector:
+          #     matchExpressions:
+          #     - key: app
+          #       operator: In
+          #       values:
+          #       - production-app
+          #   topologyKey: kubernetes.io/hostname
+      
+      # Node affinity - prefer nodes with SSD
+      # nodeAffinity:
+      #   preferredDuringSchedulingIgnoredDuringExecution:
+      #   - weight: 1
+      #     preference:
+      #       matchExpressions:
+      #       - key: disk-type
+      #         operator: In
+      #         values:
+      #         - ssd
+      
+      containers:
+      - name: app
+        image: hashicorp/http-echo:0.2.3
+        imagePullPolicy: IfNotPresent
+        
+        args:
+          - "-text=Production App v1.0"
+          - "-listen=:8080"
+        
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        
+        # Environment variables from ConfigMap
+        envFrom:
+        - configMapRef:
+            name: app-config
+        
+        # Additional environment variables from pod metadata
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        
+        # STARTUP PROBE
+        # Used for slow-starting containers
+        # Disables liveness and readiness checks until startup succeeds
+        startupProbe:
+          httpGet:
+            path: /
+            port: 8080
+            scheme: HTTP
+            httpHeaders:
+            - name: X-Probe-Type
+              value: Startup
+          
+          # No initial delay - start checking immediately
+          initialDelaySeconds: 0
+          
+          # Check every 5 seconds
+          periodSeconds: 5
+          
+          # 5 second timeout for each check
+          timeoutSeconds: 5
+          
+          # Must succeed once
+          successThreshold: 1
+          
+          # Allow 12 failures = 60 seconds to start
+          # Adjust based on your application startup time
+          failureThreshold: 12
+        
+        # LIVENESS PROBE
+        # Detects if container is alive and functioning
+        # Restarts container if probe fails repeatedly
+        # Use for: deadlocks, infinite loops, unresponsive processes
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+            scheme: HTTP
+            httpHeaders:
+            - name: X-Probe-Type
+              value: Liveness
+          
+          # Wait 15 seconds after startup probe succeeds
+          initialDelaySeconds: 15
+          
+          # Check every 10 seconds
+          periodSeconds: 10
+          
+          # 5 second timeout
+          timeoutSeconds: 5
+          
+          # Must succeed once to be considered recovered
+          successThreshold: 1
+          
+          # Fail 3 times before restarting (30 seconds total)
+          # Be conservative - false positives cause unnecessary restarts
+          failureThreshold: 3
+        
+        # READINESS PROBE
+        # Determines if container can accept traffic
+        # Removes pod from service endpoints if probe fails
+        # Use for: temporary unavailability, initialization, overload
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+            scheme: HTTP
+            httpHeaders:
+            - name: X-Probe-Type
+              value: Readiness
+          
+          # Start checking after 5 seconds
+          initialDelaySeconds: 5
+          
+          # Check frequently (every 5 seconds)
+          periodSeconds: 5
+          
+          # Short timeout
+          timeoutSeconds: 3
+          
+          # Must succeed once to be considered ready
+          successThreshold: 1
+          
+          # Fail 2 times before removing from service (10 seconds)
+          # Be aggressive - want to remove unhealthy pods quickly
+          failureThreshold: 2
+        
+        # RESOURCE LIMITS
+        # Prevents resource exhaustion and enables HPA
+        resources:
+          requests:
+            # Guaranteed resources
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            # Maximum allowed
+            memory: "256Mi"
+            cpu: "500m"
+        
+        # SECURITY CONTEXT
+        securityContext:
+          # Don't allow privilege escalation
+          allowPrivilegeEscalation: false
+          
+          # Drop all capabilities
+          capabilities:
+            drop:
+            - ALL
+          
+          # Read-only root filesystem
+          # readOnlyRootFilesystem: true
+        
+        # VOLUME MOUNTS (if needed)
+        # volumeMounts:
+        # - name: tmp
+        #   mountPath: /tmp
+        # - name: cache
+        #   mountPath: /app/cache
+      
+      # VOLUMES (if needed)
+      # volumes:
+      # - name: tmp
+      #   emptyDir: {}
+      # - name: cache
+      #   emptyDir: {}
+
+---
+# Service to expose the application
+apiVersion: v1
+kind: Service
+metadata:
+  name: production-app-service
+  namespace: production-app
+  labels:
+    app: production-app
+spec:
+  type: ClusterIP
+  
+  # Session affinity (optional)
+  # sessionAffinity: ClientIP
+  # sessionAffinityConfig:
+  #   clientIP:
+  #     timeoutSeconds: 10800
+  
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+  
+  selector:
+    app: production-app
+
+---
+# Horizontal Pod Autoscaler
+# Automatically scales pods based on metrics
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: production-app-hpa
+  namespace: production-app
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: production-app
+  
+  # Minimum and maximum replicas
+  minReplicas: 3
+  maxReplicas: 10
+  
+  # Metrics to scale on
+  metrics:
+  # CPU utilization
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70  # Scale up if CPU > 70%
+  
+  # Memory utilization
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80  # Scale up if memory > 80%
+  
+  # Custom metric example (requires custom metrics API)
+  # - type: Pods
+  #   pods:
+  #     metric:
+  #       name: http_requests_per_second
+  #     target:
+  #       type: AverageValue
+  #       averageValue: "1000"
+  
+  # Scaling behavior
+  behavior:
+    # Scale up quickly
+    scaleUp:
+      stabilizationWindowSeconds: 0  # No delay
+      policies:
+      - type: Percent
+        value: 100              # Double the pods
+        periodSeconds: 15       # Every 15 seconds
+      - type: Pods
+        value: 4                # Or add 4 pods
+        periodSeconds: 15
+      selectPolicy: Max         # Use the policy that adds more pods
+    
+    # Scale down slowly
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Wait 5 minutes
+      policies:
+      - type: Percent
+        value: 50               # Remove 50% of pods
+        periodSeconds: 15
+      - type: Pods
+        value: 2                # Or remove 2 pods
+        periodSeconds: 15
+      selectPolicy: Min         # Use the policy that removes fewer pods
+
+---
+# Pod Disruption Budget
+# Ensures minimum availability during voluntary disruptions
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: production-app-pdb
+  namespace: production-app
+spec:
+  # Either minAvailable or maxUnavailable, not both
+  minAvailable: 2  # Always keep at least 2 pods running
+  # maxUnavailable: 1  # Or allow maximum 1 pod to be unavailable
+  
+  selector:
+    matchLabels:
+      app: production-app
+  
+  # What to do with unhealthy pods during eviction
+  unhealthyPodEvictionPolicy: AlwaysAllow
+
+---
+# AppMonitor Custom Resource
+# Custom operator for advanced self-healing
+apiVersion: healing.example.com/v1
+kind: AppMonitor
+metadata:
+  name: production-app-monitor
+  namespace: production-app
+spec:
+  # Target deployment to monitor
+  targetDeployment: production-app
+  
+  # Health check configuration
+  healthCheckEndpoint: /
+  checkIntervalSeconds: 30
+  
+  # Failure threshold before remediation
+  failureThreshold: 3
+  
+  # Remediation strategy
+  remediationStrategy: restart  # Options: restart, scale, notify
+  
+  # For scale strategy
+  scaleUpReplicas: 2
+  
+  # For notify strategy
+  # notificationWebhook: https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+
+---
+# NetworkPolicy (optional but recommended for production)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: production-app-netpol
+  namespace: production-app
+spec:
+  podSelector:
+    matchLabels:
+      app: production-app
+  
+  policyTypes:
+  - Ingress
+  - Egress
+  
+  # Allow ingress from anywhere in the namespace
+  ingress:
+  - from:
+    - podSelector: {}
+    ports:
+    - protocol: TCP
+      port: 8080
+  
+  # Allow egress to DNS and anywhere
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+  - to:
+    - podSelector: {}
+
+---
+# ServiceMonitor for Prometheus (if Prometheus Operator is installed)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: production-app-monitor
+  namespace: production-app
+  labels:
+    app: production-app
+spec:
+  selector:
+    matchLabels:
+      app: production-app
+  endpoints:
+  - port: http
+    interval: 30s
+    path: /metrics
+    scheme: http

@@ -1,0 +1,316 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: appmonitor-operator
+  namespace: self-healing
+  labels:
+    app: appmonitor-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: appmonitor-operator
+  template:
+    metadata:
+      labels:
+        app: appmonitor-operator
+    spec:
+      serviceAccountName: appmonitor-operator
+      containers:
+      - name: operator
+        # This is a placeholder image - you would replace with your actual operator image
+        # For demo purposes, we'll use a simple python-based operator
+        image: python:3.11-slim
+        command:
+        - /bin/sh
+        - -c
+        - |
+          pip install kubernetes requests --quiet
+          python /operator/controller.py
+        env:
+        - name: WATCH_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: OPERATOR_NAME
+          value: "appmonitor-operator"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        volumeMounts:
+        - name: operator-code
+          mountPath: /operator
+      volumes:
+      - name: operator-code
+        configMap:
+          name: operator-controller
+          defaultMode: 0755
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: operator-controller
+  namespace: self-healing
+data:
+  controller.py: |
+    #!/usr/bin/env python3
+    import os
+    import time
+    import logging
+    import requests
+    from datetime import datetime
+    from kubernetes import client, config, watch
+    
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger('appmonitor-operator')
+    
+    # Load Kubernetes config
+    try:
+        config.load_incluster_config()
+    except:
+        config.load_kube_config()
+    
+    # Create API clients
+    api = client.CustomObjectsApi()
+    apps_v1 = client.AppsV1Api()
+    core_v1 = client.CoreV1Api()
+    
+    GROUP = 'healing.example.com'
+    VERSION = 'v1'
+    PLURAL = 'appmonitors'
+    
+    def get_deployment(namespace, name):
+        """Get deployment by name"""
+        try:
+            return apps_v1.read_namespaced_deployment(name, namespace)
+        except client.exceptions.ApiException as e:
+            logger.error(f"Failed to get deployment {name}: {e}")
+            return None
+    
+    def check_health(endpoint, deployment_service):
+        """Check health endpoint"""
+        try:
+            url = f"http://{deployment_service}{endpoint}"
+            response = requests.get(url, timeout=5)
+            return response.status_code == 200
+        except Exception as e:
+            logger.warning(f"Health check failed: {e}")
+            return False
+    
+    def restart_deployment(namespace, name):
+        """Restart deployment by updating annotation"""
+        try:
+            deployment = get_deployment(namespace, name)
+            if not deployment:
+                return False
+            
+            # Update annotation to trigger restart
+            if not deployment.spec.template.metadata.annotations:
+                deployment.spec.template.metadata.annotations = {}
+            
+            deployment.spec.template.metadata.annotations['kubectl.kubernetes.io/restartedAt'] = datetime.utcnow().isoformat()
+            
+            apps_v1.patch_namespaced_deployment(name, namespace, deployment)
+            logger.info(f"Restarted deployment {name} in namespace {namespace}")
+            
+            # Create event
+            create_event(namespace, name, "Normal", "Remediation", "Restarted deployment due to health check failure")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to restart deployment: {e}")
+            return False
+    
+    def scale_deployment(namespace, name, additional_replicas):
+        """Scale up deployment"""
+        try:
+            deployment = get_deployment(namespace, name)
+            if not deployment:
+                return False
+            
+            current_replicas = deployment.spec.replicas
+            new_replicas = current_replicas + additional_replicas
+            
+            # Update replicas
+            deployment.spec.replicas = new_replicas
+            apps_v1.patch_namespaced_deployment(name, namespace, deployment)
+            
+            logger.info(f"Scaled deployment {name} from {current_replicas} to {new_replicas}")
+            create_event(namespace, name, "Normal", "Remediation", f"Scaled deployment from {current_replicas} to {new_replicas}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to scale deployment: {e}")
+            return False
+    
+    def create_event(namespace, resource_name, type, reason, message):
+        """Create Kubernetes event"""
+        try:
+            event = client.CoreV1Event(
+                metadata=client.V1ObjectMeta(
+                    name=f"{resource_name}.{int(time.time())}",
+                    namespace=namespace
+                ),
+                involved_object=client.V1ObjectReference(
+                    kind="Deployment",
+                    name=resource_name,
+                    namespace=namespace
+                ),
+                reason=reason,
+                message=message,
+                type=type,
+                first_timestamp=datetime.utcnow(),
+                last_timestamp=datetime.utcnow(),
+                count=1,
+                source=client.V1EventSource(component="appmonitor-operator")
+            )
+            core_v1.create_namespaced_event(namespace, event)
+        except Exception as e:
+            logger.warning(f"Failed to create event: {e}")
+    
+    def update_status(namespace, name, state, message, failures):
+        """Update AppMonitor status"""
+        try:
+            status = {
+                "status": {
+                    "state": state,
+                    "lastCheckTime": datetime.utcnow().isoformat(),
+                    "consecutiveFailures": failures,
+                    "message": message
+                }
+            }
+            
+            if state == "Remediating":
+                status["status"]["lastRemediationTime"] = datetime.utcnow().isoformat()
+            
+            api.patch_namespaced_custom_object_status(
+                GROUP, VERSION, namespace, PLURAL, name, status
+            )
+        except Exception as e:
+            logger.error(f"Failed to update status: {e}")
+    
+    def reconcile(obj):
+        """Reconcile AppMonitor resource"""
+        metadata = obj.get('metadata', {})
+        spec = obj.get('spec', {})
+        status = obj.get('status', {})
+        
+        name = metadata.get('name')
+        namespace = metadata.get('namespace')
+        
+        target_deployment = spec.get('targetDeployment')
+        health_endpoint = spec.get('healthCheckEndpoint')
+        failure_threshold = spec.get('failureThreshold', 3)
+        remediation_strategy = spec.get('remediationStrategy', 'restart')
+        scale_replicas = spec.get('scaleUpReplicas', 1)
+        
+        logger.info(f"Reconciling AppMonitor {namespace}/{name}")
+        
+        # Check if deployment exists
+        deployment = get_deployment(namespace, target_deployment)
+        if not deployment:
+            update_status(namespace, name, "Unknown", f"Deployment {target_deployment} not found", 0)
+            return
+        
+        # Perform health check (simplified - in production, use service endpoint)
+        # For demo, we'll check if deployment has ready replicas
+        ready_replicas = deployment.status.ready_replicas or 0
+        desired_replicas = deployment.spec.replicas or 0
+        
+        is_healthy = ready_replicas >= desired_replicas
+        current_failures = status.get('consecutiveFailures', 0)
+        
+        if is_healthy:
+            if current_failures > 0:
+                logger.info(f"AppMonitor {namespace}/{name} is now healthy")
+            update_status(namespace, name, "Healthy", "All replicas are ready", 0)
+        else:
+            new_failures = current_failures + 1
+            logger.warning(f"AppMonitor {namespace}/{name} unhealthy: {ready_replicas}/{desired_replicas} ready")
+            
+            if new_failures >= failure_threshold:
+                logger.info(f"Triggering remediation for {namespace}/{name}")
+                update_status(namespace, name, "Remediating", f"Executing {remediation_strategy} strategy", new_failures)
+                
+                if remediation_strategy == "restart":
+                    restart_deployment(namespace, target_deployment)
+                elif remediation_strategy == "scale":
+                    scale_deployment(namespace, target_deployment, scale_replicas)
+                elif remediation_strategy == "notify":
+                    webhook = spec.get('notificationWebhook')
+                    if webhook:
+                        try:
+                            requests.post(webhook, json={
+                                "resource": f"{namespace}/{name}",
+                                "deployment": target_deployment,
+                                "failures": new_failures,
+                                "message": "Health check threshold exceeded"
+                            }, timeout=5)
+                        except Exception as e:
+                            logger.error(f"Failed to send notification: {e}")
+                
+                # Reset failure count after remediation
+                new_failures = 0
+            else:
+                update_status(namespace, name, "Unhealthy", f"{ready_replicas}/{desired_replicas} ready", new_failures)
+    
+    def watch_resources():
+        """Watch AppMonitor resources"""
+        logger.info("Starting AppMonitor operator")
+        
+        w = watch.Watch()
+        namespace = os.getenv('WATCH_NAMESPACE', 'self-healing')
+        
+        while True:
+            try:
+                for event in w.stream(api.list_namespaced_custom_object, GROUP, VERSION, namespace, PLURAL):
+                    obj = event['object']
+                    event_type = event['type']
+                    
+                    logger.info(f"Event: {event_type} for {obj['metadata']['name']}")
+                    
+                    if event_type in ['ADDED', 'MODIFIED']:
+                        reconcile(obj)
+                
+            except Exception as e:
+                logger.error(f"Watch error: {e}")
+                time.sleep(5)
+    
+    def periodic_reconciliation():
+        """Periodic reconciliation loop"""
+        namespace = os.getenv('WATCH_NAMESPACE', 'self-healing')
+        
+        while True:
+            try:
+                time.sleep(30)  # Check every 30 seconds
+                
+                # List all AppMonitor resources
+                resources = api.list_namespaced_custom_object(GROUP, VERSION, namespace, PLURAL)
+                
+                for obj in resources.get('items', []):
+                    reconcile(obj)
+                    
+            except Exception as e:
+                logger.error(f"Reconciliation error: {e}")
+                time.sleep(30)
+    
+    if __name__ == '__main__':
+        import threading
+        
+        # Start watch thread
+        watch_thread = threading.Thread(target=watch_resources, daemon=True)
+        watch_thread.start()
+        
+        # Start periodic reconciliation
+        periodic_reconciliation()

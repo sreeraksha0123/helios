@@ -1,0 +1,18 @@
+# ServiceMonitor for Prometheus Operator
+# Only deploy if you have Prometheus Operator installed
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: advanced-app-monitor
+  namespace: self-healing
+  labels:
+    app: advanced-app
+spec:
+  selector:
+    matchLabels:
+      app: advanced-app
+  endpoints:
+  - port: http
+    interval: 30s
+    path: /metrics
+    scheme: http

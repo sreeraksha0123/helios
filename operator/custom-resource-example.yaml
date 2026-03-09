@@ -1,0 +1,43 @@
+---
+# Example 1: Restart strategy
+apiVersion: healing.example.com/v1
+kind: AppMonitor
+metadata:
+  name: advanced-app-monitor
+  namespace: self-healing
+spec:
+  targetDeployment: advanced-app
+  healthCheckEndpoint: /
+  checkIntervalSeconds: 30
+  failureThreshold: 3
+  remediationStrategy: restart
+
+---
+# Example 2: Scale strategy
+apiVersion: healing.example.com/v1
+kind: AppMonitor
+metadata:
+  name: basic-app-monitor
+  namespace: self-healing
+spec:
+  targetDeployment: basic-app
+  healthCheckEndpoint: /
+  checkIntervalSeconds: 60
+  failureThreshold: 5
+  remediationStrategy: scale
+  scaleUpReplicas: 2
+
+---
+# Example 3: Notification strategy
+apiVersion: healing.example.com/v1
+kind: AppMonitor
+metadata:
+  name: critical-app-monitor
+  namespace: self-healing
+spec:
+  targetDeployment: advanced-app
+  healthCheckEndpoint: /health
+  checkIntervalSeconds: 15
+  failureThreshold: 2
+  remediationStrategy: notify
+  notificationWebhook: https://hooks.slack.com/services/YOUR/WEBHOOK/URL

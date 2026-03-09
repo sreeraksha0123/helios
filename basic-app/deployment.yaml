@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: basic-app
+  namespace: self-healing
+  labels:
+    app: basic-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: basic-app
+  template:
+    metadata:
+      labels:
+        app: basic-app
+    spec:
+      containers:
+      - name: app
+        image: nginx:1.21-alpine
+        ports:
+        - containerPort: 80
+          name: http
+        envFrom:
+        - configMapRef:
+            name: basic-app-config
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+      restartPolicy: Always
