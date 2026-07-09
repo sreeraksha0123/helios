@@ -1,0 +1,56 @@
+{{- $root := . -}}
+{{- range $svc := list "demoApi" "demoWorker" "frontend" }}
+{{- $cfg := index $root.Values $svc }}
+{{- if $cfg.hpa.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $cfg.name }}-hpa
+  namespace: {{ $root.Values.namespace }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $cfg.name }}
+  minReplicas: {{ $cfg.hpa.minReplicas }}
+  maxReplicas: {{ $cfg.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $cfg.hpa.targetCPUUtilizationPercentage }}
+    {{- if $cfg.hpa.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ $cfg.hpa.targetMemoryUtilizationPercentage }}
+    {{- end }}
+    {{- if and $cfg.hpa.customMetric $cfg.hpa.customMetric.enabled }}
+    - type: Pods
+      pods:
+        metric:
+          name: {{ $cfg.hpa.customMetric.name }}
+        target:
+          type: AverageValue
+          averageValue: {{ $cfg.hpa.customMetric.targetAverageValue }}
+    {{- end }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 120
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Pods
+          value: 4
+          periodSeconds: 30
+{{- end }}
+{{- end }}

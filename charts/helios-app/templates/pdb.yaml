@@ -1,0 +1,15 @@
+{{- $root := . -}}
+{{- range $svc := list "demoApi" "demoWorker" "frontend" }}
+{{- $cfg := index $root.Values $svc }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $cfg.name }}-pdb
+  namespace: {{ $root.Values.namespace }}
+spec:
+  minAvailable: {{ $root.Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      app: {{ $cfg.name }}
+{{- end }}

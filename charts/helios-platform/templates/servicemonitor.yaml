@@ -1,0 +1,19 @@
+{{- if .Values.selfHealingOperator.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "helios-platform.fullname" . }}-selfhealing-operator
+  namespace: {{ .Values.namespace }}
+  labels:
+    release: helios-infra
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: helios-platform
+  namespaceSelector:
+    matchNames: [{{ .Values.namespace }}]
+  endpoints:
+    - port: metrics
+      interval: 15s
+      path: /metrics
+{{- end }}

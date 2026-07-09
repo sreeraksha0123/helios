@@ -1,0 +1,49 @@
+{{- if .Values.selfHealingOperator.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "helios-platform.fullname" . }}-selfhealing-operator
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "helios-platform.labels" . | nindent 4 }}
+    app: helios-selfhealing-operator
+spec:
+  replicas: {{ .Values.selfHealingOperator.replicaCount }}
+  selector:
+    matchLabels:
+      app: helios-selfhealing-operator
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: helios-selfhealing-operator
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      serviceAccountName: {{ include "helios-platform.fullname" . }}-selfhealing-operator
+      containers:
+        - name: operator
+          image: "{{ .Values.selfHealingOperator.image.repository }}:{{ .Values.selfHealingOperator.image.tag }}"
+          imagePullPolicy: {{ .Values.selfHealingOperator.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "helios-platform.fullname" . }}-config
+          ports:
+            - name: metrics
+              containerPort: 8080
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.selfHealingOperator.resources | nindent 12 }}
+{{- end }}

@@ -1,0 +1,37 @@
+{
+  "title": "Helios / Log Explorer",
+  "uid": "helios-log-explorer",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "tags": ["helios", "logs", "loki"],
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      { "name": "namespace", "type": "query", "query": "label_values(namespace)" },
+      { "name": "app", "type": "query", "query": "label_values({namespace=~\"$namespace\"}, app)" },
+      { "name": "severity", "type": "query", "query": "label_values({namespace=~\"$namespace\"}, severity)" }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Log Volume by Severity",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "loki" },
+      "targets": [
+        { "expr": "sum by (severity) (count_over_time({namespace=~\"$namespace\", app=~\"$app\", severity=~\"$severity\"}[5m]))", "refId": "A" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Live Log Stream",
+      "type": "logs",
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 8 },
+      "datasource": { "type": "loki" },
+      "targets": [
+        { "expr": "{namespace=~\"$namespace\", app=~\"$app\", severity=~\"$severity\"}", "refId": "A" }
+      ]
+    }
+  ]
+}

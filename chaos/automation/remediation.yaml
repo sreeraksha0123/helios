@@ -1,0 +1,67 @@
+# This file documents/configures the automated remediation paths that fire
+# in response to the chaos experiments in ../experiments and the weekly
+# schedule. The self-healing operator (../../controllers) is the actual
+# enforcement point; the pieces below are the Kubernetes-native and
+# third-party controllers it complements rather than replaces.
+
+---
+# 1) Pod auto-healing is Kubernetes-native: any pod under a Deployment with
+#    restartPolicy: Always (the default) is restarted by the kubelet.
+#    The self-healing operator adds detection for *slow* failures that
+#    kubelet-level restarts don't catch, e.g. memory creeping toward a
+#    limit without OOMKilling, using MEMORY_THRESHOLD_PERCENT from
+#    charts/helios-platform/values.yaml.
+
+---
+# 2) Kured — reboots nodes that have a pending reboot-required marker
+#    (e.g. after unattended-upgrades). Optional; enable if your base OS
+#    image needs periodic reboots for kernel/security patches.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kured
+  namespace: kube-system
+  labels:
+    app: kured
+spec:
+  selector:
+    matchLabels: { app: kured }
+  template:
+    metadata:
+      labels: { app: kured }
+    spec:
+      serviceAccountName: kured
+      containers:
+        - name: kured
+          image: ghcr.io/kubereboot/kured:1.15.1
+          args:
+            - --reboot-sentinel=/var/run/reboot-required
+            - --period=1h
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: hostpath
+              mountPath: /var/run
+      volumes:
+        - name: hostpath
+          hostPath:
+            path: /var/run
+
+---
+# 3) Auto-scaling recovery: HPA (charts/helios-app/templates/hpa.yaml) and
+#    VPA (charts/helios-app/templates/vpa.yaml) already handle the
+#    "add capacity" side of remediation. Cluster Autoscaler is cloud-provider
+#    specific — see terraform/main.tf for an EKS example that enables it via
+#    node group tags rather than an in-cluster manifest.
+
+---
+# 4) Network recovery: NetworkPolicies (charts/helios-platform/templates/
+#    networkpolicy.yaml) define the steady-state allowed topology that
+#    remains in force even during a NetworkChaos partition experiment —
+#    once Chaos Mesh's iptables rules are torn down at the end of the
+#    experiment duration, traffic resumes automatically with no manual
+#    intervention required. For active traffic management (retries,
+#    circuit breaking) during partitions, install Istio or Linkerd and set
+#    outlierDetection / retries policies on the demo-api and frontend
+#    Services; left out of the default install to keep the base stack
+#    lighter — see docs/architecture.md for the Istio-enabled variant.

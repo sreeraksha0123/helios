@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-standalone
+  namespace: helios-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: frontend-standalone }
+  template:
+    metadata:
+      labels: { app: frontend-standalone }
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/helios/frontend:latest
+          ports: [{ containerPort: 8080 }]
+          env:
+            - name: API_URL
+              value: "http://demo-api:8080"
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }

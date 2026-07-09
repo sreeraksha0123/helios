@@ -1,0 +1,21 @@
+{{- if .Values.demoApi.keda.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ .Values.demoApi.name }}-scaledobject
+  namespace: {{ .Values.namespace }}
+spec:
+  scaleTargetRef:
+    name: {{ .Values.demoApi.name }}
+  minReplicaCount: {{ .Values.demoApi.keda.minReplicaCount }}
+  maxReplicaCount: {{ .Values.demoApi.keda.maxReplicaCount }}
+  triggers:
+    {{- range .Values.demoApi.keda.triggers }}
+    - type: {{ .type }}
+      metadata:
+        serverAddress: http://helios-prom-kube-promet-prometheus.helios-monitoring:9090
+        metricName: {{ .metricName }}
+        threshold: {{ .threshold | quote }}
+        query: {{ .query | quote }}
+    {{- end }}
+{{- end }}

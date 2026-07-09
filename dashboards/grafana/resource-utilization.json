@@ -1,0 +1,48 @@
+{
+  "title": "Helios / Resource Utilization",
+  "uid": "helios-resource-utilization",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "tags": ["helios", "resources"],
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "CPU Requests vs Limits vs Usage (by namespace)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "sum by (namespace) (kube_pod_container_resource_requests{resource='cpu'})", "refId": "A", "legendFormat": "requests {{namespace}}" },
+        { "expr": "sum by (namespace) (rate(container_cpu_usage_seconds_total[5m]))", "refId": "B", "legendFormat": "usage {{namespace}}" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Memory Requests vs Usage (by namespace)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "sum by (namespace) (kube_pod_container_resource_requests{resource='memory'})", "refId": "A", "legendFormat": "requests {{namespace}}" },
+        { "expr": "sum by (namespace) (container_memory_working_set_bytes)", "refId": "B", "legendFormat": "usage {{namespace}}" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "PVC Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes", "refId": "A", "legendFormat": "{{namespace}}/{{persistentvolumeclaim}}" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "ResourceQuota Utilization",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        { "expr": "kube_resourcequota{type='used'} / on(namespace, resource) kube_resourcequota{type='hard'}", "refId": "A" }
+      ]
+    }
+  ]
+}

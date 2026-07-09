@@ -1,0 +1,67 @@
+{
+  "title": "Helios / Self-Healing",
+  "uid": "helios-self-healing",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "tags": ["helios", "self-healing", "mttr"],
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Mean Time To Resolve (1h rolling, by namespace)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "helios:mttr_seconds_1h", "refId": "A", "legendFormat": "{{namespace}}" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "MTTR Improvement vs 7d Baseline",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": -1, "max": 1 } },
+      "targets": [
+        { "expr": "helios:mttr_improvement_ratio", "refId": "A" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Remediation Actions Taken (by type, 1h)",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        { "expr": "sum by (action) (increase(selfhealing_remediation_actions_total[1h]))", "refId": "A" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Pod Restart Rate (5m)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "helios:pod_restart_rate_5m", "refId": "A", "legendFormat": "{{namespace}}/{{pod}}" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "HPA Current vs Desired Replicas",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        { "expr": "kube_horizontalpodautoscaler_status_current_replicas", "refId": "A", "legendFormat": "current {{horizontalpodautoscaler}}" },
+        { "expr": "kube_horizontalpodautoscaler_status_desired_replicas", "refId": "B", "legendFormat": "desired {{horizontalpodautoscaler}}" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Remediation Action Log",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "loki" },
+      "targets": [
+        { "expr": "{app=\"helios-selfhealing-operator\"} |= \"remediation\"", "refId": "A" }
+      ]
+    }
+  ]
+}

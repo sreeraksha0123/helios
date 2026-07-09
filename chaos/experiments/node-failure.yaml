@@ -1,0 +1,27 @@
+# Simulates node-level resource exhaustion. Chaos Mesh's StressChaos targets
+# pods scheduled to matching nodes rather than shutting a node down outright
+# (which needs cloud-provider integration) — this is the standard, portable
+# way to exercise node-pressure remediation paths in-cluster.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: node-stress-experiment
+  namespace: helios-app
+  labels:
+    helios.io/chaos-suite: "core"
+spec:
+  mode: one
+  selector:
+    namespaces: [helios-app]
+    labelSelectors:
+      app: demo-worker
+  stressors:
+    cpu:
+      workers: 4
+      load: 80
+    memory:
+      workers: 2
+      size: "1GB"
+  duration: "60s"
+  scheduler:
+    cron: "@every 6h"

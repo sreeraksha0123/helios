@@ -1,0 +1,22 @@
+# Standalone manifest for running demo-api outside the Helm chart (e.g. for
+# a quick `kubectl apply -f` smoke test). The Helm-templated version lives
+# in charts/helios-app/templates/deployment.yaml and is the one used in CI/CD.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-api-standalone
+  namespace: helios-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: demo-api-standalone }
+  template:
+    metadata:
+      labels: { app: demo-api-standalone }
+    spec:
+      containers:
+        - name: demo-api
+          image: ghcr.io/helios/demo-api:latest
+          ports: [{ containerPort: 8080 }]
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }

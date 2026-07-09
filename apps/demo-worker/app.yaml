@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-worker-standalone
+  namespace: helios-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: demo-worker-standalone }
+  template:
+    metadata:
+      labels: { app: demo-worker-standalone }
+    spec:
+      containers:
+        - name: demo-worker
+          image: ghcr.io/helios/demo-worker:latest
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8081 }

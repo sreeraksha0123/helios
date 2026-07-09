@@ -1,0 +1,46 @@
+{
+  "title": "Helios / Chaos Engineering",
+  "uid": "helios-chaos-engineering",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "tags": ["helios", "chaos", "resiliency"],
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Chaos Experiments Run (24h)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "sum(increase(chaos_controller_manager_experiments_total[24h]))", "refId": "A" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Experiments by Kind",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 9, "x": 6, "y": 0 },
+      "targets": [
+        { "expr": "sum by (kind) (chaos_controller_manager_experiments_total)", "refId": "A" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Active Chaos Experiments",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 9, "x": 15, "y": 0 },
+      "targets": [
+        { "expr": "chaos_controller_manager_experiments{phase='Running'}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Detection-to-Remediation Latency During Chaos Windows",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "helios:incident_resolution_seconds", "refId": "A", "legendFormat": "{{namespace}}/{{pod}}" }
+      ]
+    }
+  ]
+}

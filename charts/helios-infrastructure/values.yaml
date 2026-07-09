@@ -1,0 +1,146 @@
+# Global settings shared across subcharts
+global:
+  namespace: helios-monitoring
+  storageClassName: standard   # override per-cluster, e.g. gp3, premium-rwo
+
+# ---------------------------------------------------------------------------
+# kube-prometheus-stack (Prometheus Operator + Alertmanager + node-exporter)
+# ---------------------------------------------------------------------------
+kube-prometheus-stack:
+  enabled: true
+  fullnameOverride: helios-prom
+
+  prometheus:
+    prometheusSpec:
+      replicas: 2
+      retention: 30d
+      podMonitorSelectorNilUsesHelmValues: false
+      serviceMonitorSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+      resources:
+        requests: { cpu: 250m, memory: 1Gi }
+        limits: { cpu: "1", memory: 2Gi }
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 50Gi
+    # Thanos sidecar for long-term/multi-cluster storage. Point objectStorageConfig
+    # at your bucket secret; disabled by default so the chart installs without
+    # external object storage configured.
+    thanos:
+      enabled: false
+      objectStorageConfig:
+        secretName: thanos-objstore-secret
+        secretKey: objstore.yml
+
+  alertmanager:
+    alertmanagerSpec:
+      replicas: 2
+      resources:
+        requests: { cpu: 50m, memory: 128Mi }
+    config:
+      route:
+        receiver: default
+        group_by: ["namespace", "alertname"]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 4h
+        routes:
+          - receiver: critical
+            matchers: ["severity = critical"]
+          - receiver: self-healing
+            matchers: ["team = self-healing"]
+      receivers:
+        - name: default
+        - name: critical
+        # wire in slack_configs / pagerduty_configs / webhook_configs per-env
+        - name: self-healing
+
+  grafana:
+    enabled: true
+    fullnameOverride: helios-grafana
+    replicas: 2
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClassName: standard
+    adminPassword: CHANGE_ME_IN_A_SECRET   # override via --set or a sealed secret
+    ingress:
+      enabled: true
+      ingressClassName: nginx
+      hosts: ["grafana.helios.local"]
+    additionalDataSources:
+      - name: Loki
+        type: loki
+        url: http://helios-loki:3100
+        access: proxy
+      - name: Tempo
+        type: tempo
+        url: http://helios-tempo:3100
+        access: proxy
+    sidecar:
+      dashboards:
+        enabled: true
+        label: helios_grafana_dashboard
+        searchNamespace: ALL
+      datasources:
+        enabled: true
+
+  kubeStateMetrics: { enabled: true }
+  nodeExporter: { enabled: true }
+  prometheusOperator:
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+
+# ---------------------------------------------------------------------------
+# loki-stack (Loki + Promtail)
+# ---------------------------------------------------------------------------
+loki-stack:
+  enabled: true
+  loki:
+    fullnameOverride: helios-loki
+    isDefault: false
+    persistence:
+      enabled: true
+      size: 50Gi
+    config:
+      table_manager:
+        retention_deletes_enabled: true
+        retention_period: 336h   # 14 days
+      limits_config:
+        enforce_metric_name: false
+        reject_old_samples: true
+        reject_old_samples_max_age: 168h
+  promtail:
+    enabled: true
+    config:
+      snippets:
+        extraRelabelConfigs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            target_label: app
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            target_label: container
+          - source_labels: [__meta_kubernetes_pod_label_severity]
+            target_label: severity
+
+# ---------------------------------------------------------------------------
+# cert-manager (TLS for ingress-exposed dashboards)
+# ---------------------------------------------------------------------------
+cert-manager:
+  enabled: true
+  installCRDs: true
+
+# ---------------------------------------------------------------------------
+# ingress-nginx (exposes Grafana / Prometheus / Alertmanager)
+# ---------------------------------------------------------------------------
+ingress-nginx:
+  enabled: true
+  controller:
+    replicaCount: 2
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }

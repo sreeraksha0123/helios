@@ -1,0 +1,11 @@
+apiVersion: v2
+name: helios-app
+description: |
+  Sample microservices application (demo-api, demo-worker, frontend) used to
+  demonstrate HPA/VPA/KEDA autoscaling, zero-downtime rolling updates, and
+  chaos-experiment targets within Helios.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+maintainers:
+  - name: Helios Platform Team

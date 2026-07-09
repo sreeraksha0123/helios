@@ -1,0 +1,55 @@
+namespace: helios-platform
+
+selfHealingOperator:
+  enabled: true
+  image:
+    repository: ghcr.io/helios/selfhealing-operator
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 200m, memory: 256Mi }
+  config:
+    # Restart pods that have used > this fraction of their memory limit for
+    # longer than restartAfter.
+    memoryThresholdPercent: 90
+    restartAfter: "2m"
+    # Roll back a Deployment automatically if its newest ReplicaSet has more
+    # than this many failed pods within rollbackWindow.
+    maxFailedPodsBeforeRollback: 3
+    rollbackWindow: "5m"
+    # Node conditions that trigger a cordon+drain via the operator.
+    unhealthyNodeConditions:
+      - "DiskPressure"
+      - "MemoryPressure"
+      - "NetworkUnavailable"
+
+configMap:
+  logLevel: info
+  environment: dev
+
+secrets:
+  # Reference existing secrets (created out-of-band via sealed-secrets /
+  # external-secrets / your CI). Nothing sensitive is templated in-repo.
+  grafanaAdminSecretName: helios-grafana-admin
+  registryPullSecretName: helios-registry-pull
+
+networkPolicy:
+  enabled: true
+  allowedNamespaces:
+    - helios-monitoring
+    - helios-app
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+resourceQuota:
+  enabled: true
+  hard:
+    requests.cpu: "8"
+    requests.memory: 16Gi
+    limits.cpu: "16"
+    limits.memory: 32Gi
+    pods: "100"

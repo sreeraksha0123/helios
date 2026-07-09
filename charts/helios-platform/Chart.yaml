@@ -1,0 +1,11 @@
+apiVersion: v2
+name: helios-platform
+description: |
+  The Helios platform layer: the self-healing operator, configuration,
+  secrets wiring, and shared platform services that the demo application
+  (helios-app) and the infrastructure chart both depend on.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+maintainers:
+  - name: Helios Platform Team

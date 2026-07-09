@@ -1,0 +1,76 @@
+namespace: helios-app
+
+image:
+  registry: ghcr.io/helios
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+demoApi:
+  name: demo-api
+  replicaCount: 2
+  port: 8080
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+    customMetric:
+      enabled: true
+      name: http_requests_per_second
+      targetAverageValue: "1000"
+  vpa:
+    enabled: true
+    updateMode: "Auto"
+  keda:
+    enabled: true
+    minReplicaCount: 2
+    maxReplicaCount: 20
+    triggers:
+      - type: prometheus
+        metricName: http_requests_per_second
+        threshold: "50"
+        query: sum(rate(http_requests_total{app="demo-api"}[1m]))
+
+demoWorker:
+  name: demo-worker
+  replicaCount: 2
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+  hpa:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 75
+
+frontend:
+  name: frontend
+  replicaCount: 2
+  port: 8080
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 250m, memory: 128Mi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    host: helios.local
+
+topologySpreadConstraints:
+  enabled: true
+  maxSkew: 1
+
+podDisruptionBudget:
+  minAvailable: 1
+
+rollingUpdate:
+  maxSurge: "25%"
+  maxUnavailable: 0

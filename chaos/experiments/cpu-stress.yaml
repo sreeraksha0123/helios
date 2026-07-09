@@ -1,0 +1,21 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: cpu-stress-experiment
+  namespace: helios-app
+  labels:
+    helios.io/chaos-suite: "core"
+spec:
+  mode: fixed-percent
+  value: "50"
+  selector:
+    namespaces: [helios-app]
+    labelSelectors:
+      app: demo-api
+  stressors:
+    cpu:
+      workers: 2
+      load: 90
+  duration: "2m"
+  scheduler:
+    cron: "@every 2h"

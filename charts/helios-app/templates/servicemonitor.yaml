@@ -1,0 +1,22 @@
+{{- $root := . -}}
+{{- range $svc := list "demoApi" "frontend" }}
+{{- $cfg := index $root.Values $svc }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $cfg.name }}
+  namespace: {{ $root.Values.namespace }}
+  labels:
+    release: helios-infra
+spec:
+  selector:
+    matchLabels:
+      app: {{ $cfg.name }}
+  namespaceSelector:
+    matchNames: [{{ $root.Values.namespace }}]
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+{{- end }}

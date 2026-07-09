@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: helios-app-config
+  namespace: {{ .Values.namespace }}
+data:
+  DEMO_API_URL: "http://{{ .Values.demoApi.name }}:{{ .Values.demoApi.port }}"

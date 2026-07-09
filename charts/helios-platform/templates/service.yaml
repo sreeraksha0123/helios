@@ -1,0 +1,16 @@
+{{- if .Values.selfHealingOperator.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "helios-platform.fullname" . }}-selfhealing-operator
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "helios-platform.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: helios-selfhealing-operator
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: 8080
+{{- end }}

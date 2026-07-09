@@ -1,0 +1,14 @@
+# Minimal Prometheus config for the docker-compose smoke-test stack
+# (../docker-compose.yml). Not used by the Kubernetes deployment, which is
+# configured entirely through the kube-prometheus-stack values in
+# charts/helios-infrastructure/values.yaml.
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: demo-api
+    static_configs:
+      - targets: ["demo-api:8080"]
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

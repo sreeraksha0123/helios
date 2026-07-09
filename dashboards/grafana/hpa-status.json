@@ -1,0 +1,56 @@
+{
+  "title": "Helios / HPA Status",
+  "uid": "helios-hpa-status",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "tags": ["helios", "hpa", "autoscaling"],
+  "time": { "from": "now-3h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Current Replicas by HPA",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "kube_horizontalpodautoscaler_status_current_replicas", "refId": "A", "legendFormat": "{{horizontalpodautoscaler}}" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Target vs Current CPU Utilization (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "kube_horizontalpodautoscaler_spec_target_metric{metric_name='cpu'}", "refId": "A", "legendFormat": "target {{horizontalpodautoscaler}}" },
+        { "expr": "kube_horizontalpodautoscaler_status_current_metrics_average_utilization", "refId": "B", "legendFormat": "current {{horizontalpodautoscaler}}" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Scaling Events (annotations)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "changes(kube_horizontalpodautoscaler_status_current_replicas[10m]) > 0", "refId": "A", "legendFormat": "{{horizontalpodautoscaler}} scale events" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "VPA Recommended vs Actual Requests (CPU)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        { "expr": "kube_customresource_verticalpodautoscaler_status_recommendation_containerrecommendations_target{resource='cpu'}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "KEDA ScaledObject Active",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        { "expr": "sum(keda_scaled_object_active)", "refId": "A" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+name: CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy to"
+        required: true
+        default: "staging"
+        type: choice
+        options: [staging, production]
+
+jobs:
+  sync-dashboards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Copy canonical dashboards into the infra chart
+        run: |
+          mkdir -p charts/helios-infrastructure/dashboards
+          cp dashboards/grafana/*.json charts/helios-infrastructure/dashboards/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chart-with-dashboards
+          path: charts/
+
+  validate:
+    runs-on: ubuntu-latest
+    needs: sync-dashboards
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: chart-with-dashboards, path: charts/ }
+      - uses: azure/setup-helm@v4
+        with: { version: "v3.15.4" }
+      - run: |
+          helm lint charts/helios-infrastructure
+          helm lint charts/helios-platform
+          helm lint charts/helios-app
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: validate
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: chart-with-dashboards, path: charts/ }
+      - uses: azure/setup-kubectl@v4
+        with: { version: "v1.30.0" }
+      - uses: azure/setup-helm@v4
+        with: { version: "v3.15.4" }
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.STAGING_KUBECONFIG }}" | base64 -d > "$HOME/.kube/config"
+      - name: Deploy infrastructure + platform + app
+        run: ./scripts/deploy.sh staging ${{ github.sha }}
+      - name: Verify rollout (zero-downtime check)
+        run: |
+          kubectl rollout status deployment/demo-api -n helios-app --timeout=5m
+          kubectl rollout status deployment/frontend -n helios-app --timeout=5m
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: chart-with-dashboards, path: charts/ }
+      - uses: azure/setup-kubectl@v4
+        with: { version: "v1.30.0" }
+      - uses: azure/setup-helm@v4
+        with: { version: "v3.15.4" }
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.PROD_KUBECONFIG }}" | base64 -d > "$HOME/.kube/config"
+      - name: Canary deploy via Flagger-managed rollout
+        run: ./scripts/deploy.sh production ${{ github.sha }}
+      - name: Verify rollout (zero-downtime check)
+        run: |
+          kubectl rollout status deployment/demo-api -n helios-app --timeout=10m
+          kubectl rollout status deployment/frontend -n helios-app --timeout=10m

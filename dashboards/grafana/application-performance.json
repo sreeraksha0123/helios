@@ -1,0 +1,62 @@
+{
+  "title": "Helios / Application Performance (RED)",
+  "uid": "helios-app-performance",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "tags": ["helios", "application", "red"],
+  "time": { "from": "now-3h", "to": "now" },
+  "templating": {
+    "list": [
+      { "name": "namespace", "type": "query", "query": "label_values(http_requests_total, namespace)" }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request Rate (req/s)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "sum by (app) (rate(http_requests_total{namespace=~'$namespace'}[5m]))", "refId": "A" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Error Rate (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "targets": [
+        { "expr": "100 * sum by (app) (rate(http_requests_total{namespace=~'$namespace', status=~'5..'}[5m])) / sum by (app) (rate(http_requests_total{namespace=~'$namespace'}[5m]))", "refId": "A" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "P50 / P95 / P99 Latency",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le, app) (rate(http_request_duration_seconds_bucket{namespace=~'$namespace'}[5m])))", "refId": "A", "legendFormat": "p50 {{app}}" },
+        { "expr": "histogram_quantile(0.95, sum by (le, app) (rate(http_request_duration_seconds_bucket{namespace=~'$namespace'}[5m])))", "refId": "B", "legendFormat": "p95 {{app}}" },
+        { "expr": "histogram_quantile(0.99, sum by (le, app) (rate(http_request_duration_seconds_bucket{namespace=~'$namespace'}[5m])))", "refId": "C", "legendFormat": "p99 {{app}}" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "In-flight Requests",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "sum by (app) (http_requests_in_flight{namespace=~'$namespace'})", "refId": "A" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Requests by Status Code",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        { "expr": "sum by (status) (rate(http_requests_total{namespace=~'$namespace'}[5m]))", "refId": "A" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{{- $root := . -}}
+{{- range $svc := list "demoApi" "frontend" }}
+{{- $cfg := index $root.Values $svc }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $cfg.name }}
+  namespace: {{ $root.Values.namespace }}
+  labels:
+    {{- include "helios-app.labels" $root | nindent 4 }}
+spec:
+  selector:
+    app: {{ $cfg.name }}
+  ports:
+    - port: {{ $cfg.port }}
+      targetPort: {{ $cfg.port }}
+{{- end }}

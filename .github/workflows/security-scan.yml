@@ -1,0 +1,52 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"   # weekly
+
+jobs:
+  trivy-images:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [demo-api, demo-worker, frontend, selfhealing-operator]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve build context
+        id: ctx
+        run: |
+          if [ "${{ matrix.component }}" = "selfhealing-operator" ]; then
+            echo "path=controllers" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=apps/${{ matrix.component }}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build image locally for scanning
+        run: docker build -t scan-target:${{ github.sha }} ${{ steps.ctx.outputs.path }}
+      - uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: scan-target:${{ github.sha }}
+          format: sarif
+          output: trivy-${{ matrix.component }}.sarif
+          severity: CRITICAL,HIGH
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.component }}.sarif
+          category: trivy-${{ matrix.component }}
+
+  helm-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with: { version: "v3.15.4" }
+      - name: Render charts and scan with kube-score-style checks (kubeconform)
+        run: |
+          helm template charts/helios-platform > /tmp/platform.yaml
+          helm template charts/helios-app > /tmp/app.yaml
+          pip install checkov
+          checkov -f /tmp/platform.yaml --framework kubernetes --compact
+          checkov -f /tmp/app.yaml --framework kubernetes --compact

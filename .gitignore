@@ -1,0 +1,37 @@
+# Kubernetes / Helm
+*.tgz
+charts/**/charts/
+kubeconfig
+*.kubeconfig
+.kube/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!terraform.tfvars.example
+crash.log
+
+# Go
+apps/**/bin/
+apps/**/*.exe
+controllers/bin/
+vendor/
+
+# Env / secrets
+.env
+.env.*
+secrets/
+*.pem
+*.key
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local dev
+/tmp/
+*.log

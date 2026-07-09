@@ -1,0 +1,22 @@
+{{/*
+  Dashboard JSON lives at the repo root under dashboards/grafana/ (the canonical
+  source, referenced by docs and CI). Helm's .Files is scoped to the chart
+  directory, so `make package` / the CI pipeline copies that directory into
+  charts/helios-infrastructure/dashboards/ before `helm package` runs — see
+  scripts/deploy.sh and .github/workflows/cd.yml.
+*/}}
+{{- $namespace := .Values.global.namespace }}
+{{- range $path, $bytes := .Files.Glob "dashboards/*.json" }}
+{{- $name := base $path | trimSuffix ".json" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: helios-dashboard-{{ $name }}
+  namespace: {{ $namespace }}
+  labels:
+    helios_grafana_dashboard: "1"
+data:
+  {{ base $path }}: |
+{{ $.Files.Get $path | indent 4 }}
+{{- end }}

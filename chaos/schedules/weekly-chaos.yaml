@@ -1,0 +1,41 @@
+# A broader, less predictable weekly exercise that layers pod-failure and
+# network-delay chaos on top of the always-on hourly/every-3h/every-6h
+# experiments in chaos/experiments/. Run manually or on a cron via
+# .github/workflows/chaos-test.yml.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Schedule
+metadata:
+  name: weekly-chaos-schedule
+  namespace: helios-app
+spec:
+  schedule: "0 2 * * 6"   # every Saturday at 02:00
+  type: "PodChaos"
+  historyLimit: 5
+  concurrencyPolicy: Forbid
+  podChaos:
+    action: pod-failure
+    mode: all
+    selector:
+      namespaces: [helios-app]
+    duration: "30s"
+---
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Schedule
+metadata:
+  name: weekly-network-delay-schedule
+  namespace: helios-app
+spec:
+  schedule: "30 2 * * 6"
+  type: "NetworkChaos"
+  historyLimit: 5
+  concurrencyPolicy: Forbid
+  networkChaos:
+    action: delay
+    mode: all
+    selector:
+      namespaces: [helios-app]
+    delay:
+      latency: "500ms"
+      correlation: "50"
+      jitter: "100ms"
+    duration: "1m"

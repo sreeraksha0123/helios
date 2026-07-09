@@ -1,0 +1,83 @@
+{{- if (index .Values "kube-prometheus-stack" "enabled") }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: helios-mttr-rules
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    release: {{ .Release.Name }}
+    app: prometheus
+spec:
+  groups:
+    - name: helios.mttr.recording
+      interval: 30s
+      rules:
+        # Timestamp of the most recent transition into a failed state per pod.
+        - record: helios:incident_start_timestamp
+          expr: |
+            max by (namespace, pod) (
+              (kube_pod_status_ready{condition="false"} == 1) * on(namespace, pod)
+              group_left() timestamp(kube_pod_status_ready{condition="false"} == 1)
+            )
+
+        # Timestamp of the most recent transition back to Ready per pod.
+        - record: helios:incident_end_timestamp
+          expr: |
+            max by (namespace, pod) (
+              (kube_pod_status_ready{condition="true"} == 1) * on(namespace, pod)
+              group_left() timestamp(kube_pod_status_ready{condition="true"} == 1)
+            )
+
+        # Per-incident resolution time, only valid where end > start.
+        - record: helios:incident_resolution_seconds
+          expr: |
+            clamp_min(
+              helios:incident_end_timestamp - on(namespace, pod) helios:incident_start_timestamp,
+              0
+            )
+
+        # Rolling 1h mean-time-to-resolve per namespace.
+        - record: helios:mttr_seconds_1h
+          expr: avg by (namespace) (avg_over_time(helios:incident_resolution_seconds[1h]))
+
+        # 7-day baseline, used to compute improvement over time.
+        - record: helios:mttr_seconds_7d
+          expr: avg by (namespace) (avg_over_time(helios:incident_resolution_seconds[7d]))
+
+        - record: helios:mttr_improvement_ratio
+          expr: |
+            (helios:mttr_seconds_7d - helios:mttr_seconds_1h) / helios:mttr_seconds_7d
+
+        # Container restart rate, a leading indicator feeding the self-healing
+        # dashboard alongside the MTTR figures above.
+        - record: helios:pod_restart_rate_5m
+          expr: sum by (namespace, pod) (rate(kube_pod_container_status_restarts_total[5m]))
+
+    - name: helios.mttr.alerts
+      rules:
+        - alert: HeliosMTTRRegression
+          expr: helios:mttr_seconds_1h > (helios:mttr_seconds_7d * 1.5)
+          for: 15m
+          labels:
+            severity: warning
+            team: self-healing
+          annotations:
+            summary: "MTTR regressed in namespace {{`{{ $labels.namespace }}`}}"
+            description: >-
+              1h rolling MTTR ({{`{{ $value }}`}}s) is more than 50% worse than
+              the 7d baseline. Check recent remediation-controller logs and
+              chaos schedules for this namespace.
+
+        - alert: HeliosPodCrashLoopHigh
+          expr: helios:pod_restart_rate_5m > 0.2
+          for: 10m
+          labels:
+            severity: critical
+            team: self-healing
+          annotations:
+            summary: "High restart rate for {{`{{ $labels.namespace }}`}}/{{`{{ $labels.pod }}`}}"
+            description: >-
+              Pod is restarting more than once every 5 minutes. The
+              self-healing operator should have already attempted
+              remediation — verify controllers/selfhealing_controller.go logs.
+{{- end }}
